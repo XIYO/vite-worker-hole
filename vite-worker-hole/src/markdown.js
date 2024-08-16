@@ -6,6 +6,7 @@ import rehypeShiki from '@shikijs/rehype';
 import rehypteMermaid from 'rehype-mermaid';
 import gitLog from './gitLog.js';
 import rehypeCallouts from 'rehype-callouts'
+import { resolve, join } from 'path';
 
 /**
  * @type {import('rehype-mermaid').RehypeMermaidOptions}
@@ -26,8 +27,10 @@ const rehypeShikiOptions = {
 };
 
 export default async function({data, key}) {
+    const filePath = join(process.cwd(), key);
+
     return unified()
-        .use(gitLog, { filePath: key })
+        .use(gitLog, { filePath })
 
         // remark
         .use(remarkParse)
