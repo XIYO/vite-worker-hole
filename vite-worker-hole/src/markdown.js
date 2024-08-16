@@ -27,10 +27,10 @@ const rehypeShikiOptions = {
 };
 
 export default async function({data, key}) {
-    const filePath = join(process.cwd(), key);
+    // const filePath = join(process.cwd(), key);
 
     return unified()
-        .use(gitLog, { filePath })
+        // .use(gitLog, { filePath })
 
         // remark
         .use(remarkParse)

@@ -2,24 +2,35 @@ import {describe, it} from 'vitest';
 import {Worker} from "worker_threads";
 import markdown from "../../src/markdown.js";
 import {cpus} from "node:os";
+import gitLog from "../../src/gitLog.js";
+import {join} from "path";
 
-const maxConcurrency = cpus().length; // CPU 코어 수를 기준으로 동시성 설정
+const maxConcurrency = cpus().length;
+const taskQueue = [];
+let activeWorkers = 0;
 
-function markdownPromise(markdown) {
+function markdownPromise({key, data}) {
     return new Promise((resolve, reject) => {
-        const worker = new Worker('./src/workerMarkdown.js', {
-            workerData: markdown,
-            concurrency: maxConcurrency // concurrency 옵션 추가
-        });
-
-        worker.on('message', resolve);  // 워커에서 전달된 메시지를 resolve
-        worker.on('error', reject);  // 워커 에러 시 reject
-        worker.on('exit', (code) => {
-            if (code !== 0) {
-                reject(new Error(`Worker stopped with exit code ${code}`));
-            }
-        });
+        taskQueue.push({ data, key, resolve, reject });
+        processQueue();
     });
+}
+
+async function processQueue() {
+    while (taskQueue.length > 0 && activeWorkers < maxConcurrency) {
+        const { key, data, resolve, reject } = taskQueue.shift();
+
+        const markdown = await data();
+
+        const worker = new Worker('./src/workerMarkdown.js', { workerData: { data: markdown, key } });
+        activeWorkers++;
+
+        worker.on('message', (result) => {
+            resolve(result);
+            activeWorkers--;
+            processQueue();
+        });
+    }
 }
 
 describe('Fibonacci Worker', () => {
@@ -40,14 +51,14 @@ describe('Fibonacci Worker', () => {
         performance.mark('end');
         performance.measure('Markdown Worker', 'start', 'end');
         console.log(performance.getEntriesByName('Markdown Worker'));
-    });
+    }, 0);
 
     it('워커 마크다운 파싱, 더 느림. 오버헤드? Git log disk io?', async () => {
         performance.mark('start');
 
         const promises = [];
         const markdowns = import.meta.glob('/posts/**/*.md', {
-            query: '?raw', import: 'default', eager: true
+            query: '?raw', import: 'default'
         });
 
         Object.entries(markdowns).forEach(([key, data]) => {
@@ -61,4 +72,45 @@ describe('Fibonacci Worker', () => {
         performance.measure('Markdown Worker', 'start', 'end');
         console.log(performance.getEntriesByName('Markdown Worker'));
     }, 0);
+
+    it('깃 로그만 추출', async () => {
+        performance.mark('start');
+
+        const promises = [];
+        const markdowns = import.meta.glob('/posts/**/*.md', {
+            query: '?raw', import: 'default'
+        });
+
+        Object.entries(markdowns).forEach(([key, data]) => {
+            const filePath = join(process.cwd(), key);
+
+            const htmlPromise = gitLog({filePath});
+            promises.push(htmlPromise);
+        });
+
+        const gitLogs = await Promise.all(promises);
+
+        performance.mark('end');
+        performance.measure('Markdown Worker', 'start', 'end');
+        console.log(performance.getEntriesByName('Markdown Worker'));
+    })
+
+    it('워커 깃 로그만 추출', async () => {
+      performance.mark('start');
+
+        const promises = [];
+        const markdowns = import.meta.glob('/posts/**/*.md', {
+            query: '?raw'
+        });
+
+        Object.entries(markdowns).forEach(([key, data]) => {
+            //
+        });
+
+        const gitLogs = await Promise.all(promises);
+
+        performance.mark('end');
+        performance.measure('Markdown Worker', 'start', 'end');
+        console.log(performance.getEntriesByName('Markdown'));
+    })
 });
