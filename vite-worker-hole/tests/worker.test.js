@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Worker } from 'worker_threads';
 import fibonacci from "../src/fibonacci.js";
+import {cpus} from "node:os";
 
 function fibonacciWorker(n) {
     return new Promise((resolve, reject) => {
@@ -21,8 +22,8 @@ function fibonacciWorker(n) {
 }
 
 describe('Fibonacci Worker', () => {
-    const n = 40; // 피보나치를 계산할 값
-    const count = 8; // 반복 횟수
+    const n = 42; // 피보나치를 계산할 값 (40 ~ 44 사이 추천, 45 이상은 오래 걸림)
+    const count = cpus().length; // CPU 코어만큼 반복
 
     it('단순 피보나치 계산', () => {
         performance.mark('start');
@@ -71,5 +72,5 @@ describe('Fibonacci Worker', () => {
 
         performance.measure('Fibonacci Worker Thread', 'start', 'end');
         console.log(performance.getEntriesByName('Fibonacci Worker Thread'));
-    }, 10000);
+    }, 0);
 });
