@@ -5,33 +5,7 @@ import {cpus} from "node:os";
 import gitLog from "../../src/gitLog.js";
 import {join} from "path";
 
-const maxConcurrency = cpus().length;
-const taskQueue = [];
-let activeWorkers = 0;
 
-function markdownPromise({key, data}) {
-    return new Promise((resolve, reject) => {
-        taskQueue.push({ data, key, resolve, reject });
-        processQueue();
-    });
-}
-
-async function processQueue() {
-    while (taskQueue.length > 0 && activeWorkers < maxConcurrency) {
-        const { key, data, resolve, reject } = taskQueue.shift();
-
-        const markdown = await data();
-
-        const worker = new Worker('./src/workerMarkdown.js', { workerData: { data: markdown, key } });
-        activeWorkers++;
-
-        worker.on('message', (result) => {
-            resolve(result);
-            activeWorkers--;
-            processQueue();
-        });
-    }
-}
 
 describe('Fibonacci Worker', () => {
     it('마크다운 파싱', async  () => {
@@ -56,17 +30,41 @@ describe('Fibonacci Worker', () => {
     it('워커 마크다운 파싱, 더 느림. 오버헤드? Git log disk io?', async () => {
         performance.mark('start');
 
-        const promises = [];
         const markdowns = import.meta.glob('/posts/**/*.md', {
-            query: '?raw', import: 'default'
+            query: '?raw', import: 'default', eager: true
         });
 
-        Object.entries(markdowns).forEach(([key, data]) => {
-            const htmlPromise = markdownPromise({data, key});
-            promises.push(htmlPromise);
-        });
+        const tasks =    Object.entries(markdowns).map(([key, data]) => {
+            return {key, data};
+        })
 
-        const html = await Promise.all(promises);
+        // const maxConcurrency = cpus().length; // CPU 코어 수만큼 워커 생성
+        const maxConcurrency = 1;
+        const workerPool = [];
+
+        // CPU 코어 수만큼 워커를 생성하고 풀에 추가
+        for (let i = 0; i < maxConcurrency; i++) {
+            const worker = new Worker('./src/workerMarkdown.js'); // 워커 스크립트를 지정
+
+            const promise = new Promise((resolve, reject) => {
+                worker.on('message', (e) => {
+                    console.log(e);
+                    if (tasks.length > 0) {
+                        worker.postMessage(tasks.pop());
+                    } else {
+                        resolve();
+                        worker.terminate();
+                    }
+                })
+            });
+
+            workerPool.push(promise);
+
+            worker.postMessage(tasks.pop());
+        }
+
+        const data = await Promise.all(workerPool);
+        console.log(data);
 
         performance.mark('end');
         performance.measure('Markdown Worker', 'start', 'end');
